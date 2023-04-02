@@ -11,6 +11,8 @@ from functools import partial
 from tkinter import *
 from tkinter import filedialog
 from tkinter.ttk import Progressbar
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sklearn.tree import DecisionTreeClassifier, _tree
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.metrics import accuracy_score
@@ -35,6 +37,9 @@ model = None
 train_dataset = None
 test_dataset = None
 model_train_dataset_predictions = None
+model_test_predictions = None
+texai_test_predictions =  None
+
 target_classes=[]
 min_probability_at_leaf=0
 min_probability_default_value = 40
@@ -162,6 +167,7 @@ def sort_rule_subrules():
             else:
                 sub_rule.threshold = min(t.threshold)
             rule.SubRules.append(sub_rule)
+
 def projection_for_rule_sort(val):
     ruleLength = len(val.SubRules)
     strTemp = str(ruleLength)
@@ -169,12 +175,14 @@ def projection_for_rule_sort(val):
         strTemp = strTemp + str(s.feature) + s.operator.name
     strTemp = strTemp + str(val.targetClass)
     return strTemp
+
 def pick_comprehensive_rule(rule_group):
     tempRule = rule_group[0]
     for rule in rule_group:
         if(rule.proba*rule.sampleCount > tempRule.proba * tempRule.sampleCount):
             tempRule = rule
     return tempRule
+
 def create_rule_set():
     global rule_set
     global rule_list
@@ -227,28 +235,34 @@ def texai_predict(dataset):
 
     return predictions
 
-
-def plot_visual_results(texai_predictions, model_predictions, test_dataset):
+def plot_visual_results():
+    global model_test_predictions
+    global texai_test_predictions
+    global test_dataset
+    model_predictions = model_test_predictions
+    texai_predictions = texai_test_predictions
     colors = ["red","blue","green","orange","yellow","gray","black",""]
     X_norm = (test_dataset - test_dataset.min()) / (test_dataset.max() - test_dataset.min())
-
     lda = LDA(n_components=3)  # 2-dimensional LDA
     lda_transformed = pd.DataFrame(lda.fit_transform(X_norm, model_predictions))
 
+    model_predictions_plot, ax1 = plt.subplots()
+    model_predictions_plot.set_size_inches(5, 4)
     color_index=0
     for c in target_classes:
         plt.scatter(lda_transformed[model_predictions == c][0], lda_transformed[model_predictions == c][1],label='Class '+str(c), c=colors[color_index], s=4)
         color_index += 1
-
     plt.legend(loc=3)
-    plt.show()
+    plt.title("ANN Predictions Plot")
 
+    texai_predictions_plot, ax2 = plt.subplots()
+    texai_predictions_plot.set_size_inches(5, 4)
     color_index = 0
     for c in target_classes:
         plt.scatter(lda_transformed[texai_predictions == c][0], lda_transformed[texai_predictions == c][1], label='Class ' + str(c), c=colors[color_index], s=4)
         color_index += 1
+    plt.title("TEXAI Predictions Plot")
     plt.legend(loc=3)
-    plt.show()
 
     texai_vs_model_result_colors = pd.DataFrame(columns=["ModelPrediction", "Result"])
     for i in range(len(model_predictions)):
@@ -264,19 +278,80 @@ def plot_visual_results(texai_predictions, model_predictions, test_dataset):
         texai_vs_model_result_colors = pd.concat([texai_vs_model_result_colors, newColorTempDf], ignore_index=True)
         texai_vs_model_result_colors.reset_index()
 
+    texai_vs_ann_plot, ax3 = plt.subplots()
+    texai_vs_ann_plot.set_size_inches(5, 4)
+
     for c in target_classes:
-        plt.scatter(lda_transformed[model_predictions==c][0], lda_transformed[model_predictions==c][1],  c=texai_vs_model_result_colors[texai_vs_model_result_colors["ModelPrediction"] == c]["Result"],s=4)
+        plt.scatter(lda_transformed[model_predictions==c][0], lda_transformed[model_predictions==c][1], c=texai_vs_model_result_colors[texai_vs_model_result_colors["ModelPrediction"] == c]["Result"],s=4)
 
     plt.legend(['Matched With NN', 'Wrong Prediction', 'No Prediction'], loc=3)
+    plt.title("ANN vs TEXAI Predictions Plot")
     ax = plt.gca()
     leg = ax.get_legend()
     leg.legendHandles[0].set_color('#00FF00')
     leg.legendHandles[1].set_color('#FF0000')
     leg.legendHandles[2].set_color('#0000FF')
-    plt.show()
+
+    visual_plots = Tk()
+    visual_plots.title("ANN vs TEXAI Prediction Plots")
+
+    # Create a frame with a scrollbar
+    frame = Frame(visual_plots)
+    frame.pack(fill="both", expand=True)
+
+    # Create a canvas widget and place it within the frame
+    canvas = Canvas(frame)
+    canvas.pack(side="left", fill="both", expand=True)
+
+    # Create a scrollbar widget and link it to the canvas
+    scrollbar = Scrollbar(frame, orient="vertical", command=canvas.yview)
+    scrollbar.pack(side="right", fill="y")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    visual_results_frame = Frame(canvas)
+    canvas.create_window((0, 0), window=visual_results_frame, anchor="nw")
+
+    model_predictions_frame = LabelFrame(visual_results_frame, border=4, highlightthickness=2)
+    model_predictions_frame.grid(row=0, column=0, padx=10, pady=10, sticky="SN")
+    model_predictions_canvas = FigureCanvasTkAgg(model_predictions_plot, master=model_predictions_frame)
+    model_predictions_canvas.draw()
+    model_predictions_canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+    texai_predictions_frame = LabelFrame(visual_results_frame, border=4, highlightthickness=2)
+    texai_predictions_frame.grid(row=0, column=1, padx=10, pady=10, sticky="SN")
+    texai_predictions_canvas = FigureCanvasTkAgg(texai_predictions_plot, master=texai_predictions_frame)
+    texai_predictions_canvas.draw()
+    texai_predictions_canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+    texai_vs_ann_predictions_frame = LabelFrame(visual_results_frame, border=4, highlightthickness=2)
+    texai_vs_ann_predictions_frame.grid(row=1, column=0,columnspan=2, padx=10, pady=10, sticky="SN")
+    texai_vs_ann_predictions_canvas = FigureCanvasTkAgg(texai_vs_ann_plot, master=texai_vs_ann_predictions_frame)
+    texai_vs_ann_predictions_canvas.draw()
+    texai_vs_ann_predictions_canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+    visual_results_frame.columnconfigure(1, weight=1)
+    def configure_scroll_region(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    visual_results_frame.bind("<Configure>", configure_scroll_region)
+    mainloop()
+
+def create_rule_set_summary():
+    rowInd = 2
+    for c in target_classes:
+        count = len([rule for rule in rule_set if rule.targetClass == c])
+        rule_set_summary = Label(rule_summary_frame, text="Class "+str(c), font=font, justify=LEFT).grid(sticky=W,row=rowInd,column=0,padx=10,pady=0)
+        rule_set_summary_value = Label(rule_summary_frame, text=str(count), font=font, justify=RIGHT).grid(sticky=E, row=rowInd, column=1, padx=10, pady=0)
+        rowInd+=1
+    rule_set_summary = Label(rule_summary_frame, text="Total", font=font, justify=LEFT).grid(sticky=W,row=rowInd,column=0,padx=10, pady=0)
+    rule_set_summary_value = Label(rule_summary_frame, text=str(len(rule_set)), font=font, justify=RIGHT).grid(sticky=E,row=rowInd,column=1,padx=10, pady=0)
+
 
 def evaluation():
     global model
+    global model_test_predictions
+    global texai_test_predictions
+    create_rule_set_summary()
+
     no_prediction_count = 0
     wrong_prediction_count =0
     correct_prediction_count = 0
@@ -294,8 +369,7 @@ def evaluation():
     correct_observation_count_label["text"] = correct_prediction_count
     wrong_observation_count_label["text"] = wrong_prediction_count
     no_prediction_observation_count_label["text"] = no_prediction_count
-
-    plot_visual_results(texai_test_predictions,model_test_predictions,test_dataset)
+    match_score_label_value["text"] =  str(round(correct_prediction_count/len(test_dataset),2)*100)+"%"
 
 
 main_screen = tkinter.Tk()
@@ -369,8 +443,18 @@ rule_set_frame.grid_rowconfigure(0, weight=1)
 rule_set_frame.grid_columnconfigure(0, weight=1)
 main_screen.rowconfigure(2, weight=1)
 
-test_frame = LabelFrame(main_screen,border=4, highlightthickness=2)
-test_frame.grid(row=0, column=3, padx=10, pady=10,rowspan=3, sticky=S+E+W+N)
+evaluation_frame = LabelFrame(main_screen,border=4, highlightthickness=2)
+evaluation_frame.grid(row=0, column=3, padx=10, pady=10,rowspan=3, sticky=S+E+W+N)
+evaluation_frame_title = Label(evaluation_frame, text = "EVALUATION",font=header_font,justify=CENTER).grid(row=0,column=0, padx=10, pady=10,columnspan=2)
+
+rule_summary_frame = LabelFrame(evaluation_frame,border=4, highlightthickness=2)
+rule_summary_frame.grid(row=1, column=0, padx=10, pady=10, sticky=S+E+W+N)
+rule_summary_frame_title = Label(rule_summary_frame, text = "RULE SET SUMMARY",font=header_font,justify=CENTER).grid(row=0,column=0, padx=10, pady=10,columnspan=2)
+rule_summary_frame_title_1 = Label(rule_summary_frame, text = "Target Class",font=header_font,justify=CENTER).grid(row=1,column=0,sticky="E")
+rule_summary_frame_title_2 = Label(rule_summary_frame, text = "Rule Count",font=header_font,justify=CENTER).grid(row=1,column=1,sticky="E")
+
+test_frame = LabelFrame(evaluation_frame,border=4, highlightthickness=2)
+test_frame.grid(row=2, column=0, padx=10, pady=10, sticky=S+E+W+N)
 test_frame_title = Label(test_frame, text = "TEST RESULT",font=header_font,justify=CENTER).grid(row=0,column=0, padx=10, pady=10,columnspan=2)
 
 total_observation = Label(test_frame, text = "Total observation Count",font=font,justify=LEFT).grid(sticky=W,row=1,column=0, padx=10, pady=0)
@@ -389,8 +473,27 @@ no_prediction_observation_label = Label(test_frame, text = "No prediction Count"
 no_prediction_observation_count_label = Label(test_frame, text = "0",font=font,justify=RIGHT)
 no_prediction_observation_count_label.grid(sticky=E, row=4,column=1, padx=10, pady=0,columnspan=1)
 
-test_frame.columnconfigure(1,weight=1)
+match_score_label = Label(test_frame, text = "Match Score",font=font,justify=LEFT).grid(sticky=W,row=5,column=0, padx=10, pady=0,columnspan=1)
+match_score_label_value = Label(test_frame, text = "0",font=font,justify=RIGHT)
+match_score_label_value.grid(sticky=E, row=5,column=1, padx=10, pady=0,columnspan=1)
 
+
+visualizations_frame = LabelFrame(evaluation_frame,border=4, highlightthickness=2)
+visualizations_frame.grid(row=3, column=0, padx=10, pady=10,rowspan=3, sticky=S+E+W+N)
+visualizations_frame_title = Label(visualizations_frame, text = "VISUALIZATION",font=header_font,justify=CENTER).grid(sticky=E+W+S+N,row=0,column=0, padx=10, pady=10,columnspan=2)
+
+
+plot_visual_results_button = Button(visualizations_frame, text="Predictions Plot", font=header_font,anchor=CENTER,command=plot_visual_results)
+plot_visual_results_button.grid(row=1,column=0, padx=10, pady=40,columnspan=2,sticky=E+W)
+
+
+
+
+
+visualizations_frame.columnconfigure(1, weight=1)
+rule_summary_frame.columnconfigure(1,weight=1)
+test_frame.columnconfigure(1,weight=1)
+evaluation_frame.columnconfigure(0,weight=1)
 main_screen.columnconfigure(3, weight=1)
 main_screen.columnconfigure(3, weight=1)
 main_screen.after(0, set_progress_bar_length)
