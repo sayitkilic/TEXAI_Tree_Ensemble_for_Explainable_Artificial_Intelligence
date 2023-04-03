@@ -3,7 +3,7 @@ import time
 import random
 from itertools import groupby
 from itertools import count
-
+from textwrap import wrap
 import pandas as pd
 import pickle
 import numpy as np
@@ -169,7 +169,6 @@ def sort_rule_subrules():
             else:
                 sub_rule.threshold = min(t.threshold)
             rule.SubRules.append(sub_rule)
-
 def projection_for_rule_sort(val):
     ruleLength = len(val.SubRules)
     strTemp = str(ruleLength)
@@ -177,14 +176,12 @@ def projection_for_rule_sort(val):
         strTemp = strTemp + str(s.feature) + s.operator.name
     strTemp = strTemp + str(val.targetClass)
     return strTemp
-
 def pick_comprehensive_rule(rule_group):
     tempRule = rule_group[0]
     for rule in rule_group:
         if(rule.proba*rule.sampleCount > tempRule.proba * tempRule.sampleCount):
             tempRule = rule
     return tempRule
-
 def create_rule_set():
     global rule_set
     global rule_list
@@ -195,13 +192,11 @@ def create_rule_set():
         temp_rule = pick_comprehensive_rule(rule_group)
         rule_set.append(temp_rule)
         rule_set_list_box.insert(END, temp_rule.ToString())
-
 def start_process():
     initialize_variables()
     create_forest()
     create_rule_list()
     create_rule_set()
-
 def isRuleSuitableForObservation(rule, sampleDataset):
     for subrule in rule.SubRules:
         if(subrule.operator.name == Operator.LESS_OR_EQUAL.name):
@@ -215,7 +210,6 @@ def isRuleSuitableForObservation(rule, sampleDataset):
             else:
                 return False
     return True
-
 def texai_predict(dataset):
     global final_result_dataframe
     global rule_set
@@ -257,7 +251,6 @@ def texai_predict(dataset):
         final_result_dataframe.reset_index()
 
     return predictions
-
 def plot_visual_results():
     global model_test_predictions
     global texai_test_predictions
@@ -266,7 +259,7 @@ def plot_visual_results():
     texai_predictions = texai_test_predictions
     colors = ["red","blue","green","orange","yellow","gray","black",""]
     X_norm = (test_dataset - test_dataset.min()) / (test_dataset.max() - test_dataset.min())
-    lda = LDA(n_components=3)  # 2-dimensional LDA
+    lda = LDA(n_components=2)  # 2-dimensional LDA
     lda_transformed = pd.DataFrame(lda.fit_transform(X_norm, model_predictions))
 
     model_predictions_plot, ax1 = plt.subplots()
@@ -357,7 +350,6 @@ def plot_visual_results():
 
     visual_results_frame.bind("<Configure>", configure_scroll_region)
     mainloop()
-
 def fill_rule_set_summary_frame():
     rowInd = 2
     for c in target_classes:
@@ -394,7 +386,6 @@ def evaluation():
     wrong_observation_count_label["text"] = wrong_prediction_count
     no_prediction_observation_count_label["text"] = no_prediction_count
     match_score_label_value["text"] =  str(round(correct_prediction_count/len(test_dataset),2)*100)+"%"
-
 def show_final_result_per_observation():
     final_result = Tk()
     final_result.title("Final Results per Observation")
@@ -411,6 +402,53 @@ def show_final_result_per_observation():
     scrollbar.configure(command=tree.yview)
     scrollbar.pack(side="right", fill="y")
     tree.pack(expand=True, fill="both")
+    final_result.mainloop()
+def get_fitted_dataset_to_rule(dataset,rule):
+    tempDataFrame = dataset
+    for s in rule.SubRules:
+        if(s.operator.name == Operator.GREATER_THAN.name):
+            tempDataFrame = tempDataFrame[tempDataFrame[s.feature] > s.threshold]
+        elif(s.operator.name == Operator.LESS_OR_EQUAL.name):
+            tempDataFrame = tempDataFrame[tempDataFrame[s.feature] <= s.threshold]
+    return tempDataFrame
+def show_final_result_per_rule():
+    global rule_set
+    global test_dataset
+    index = rule_set_list_box.curselection()[0]
+    rule = rule_set[index]
+
+    dt = get_fitted_dataset_to_rule(test_dataset,rule)
+
+    model_predictions = model.predict(dt)
+
+    ind=0
+    for c in target_classes:
+        model_predictions[ind] = c
+        ind+=1
+
+    colors = ["red","blue","green","orange","yellow","gray","black",""]
+    X_norm = (dt - dt.min()) / (dt.max() - dt.min())
+    lda = LDA(n_components=2)  # 2-dimensional LDA
+    lda_transformed = pd.DataFrame(lda.fit_transform(X_norm, model_predictions))
+
+    model_predictions_plot, ax1 = plt.subplots()
+    model_predictions_plot.set_size_inches(6, 5)
+    color_index=0
+    for c in target_classes:
+        plt.scatter(lda_transformed[model_predictions == c][0], lda_transformed[model_predictions == c][1],label='Class '+str(c), c=colors[color_index], s=4)
+        color_index += 1
+    plt.legend(loc=3)
+    plt.title('\n'.join(wrap(rule.ToStringSummary(), 60)), fontsize=12)
+
+    final_result = Tk()
+    final_result.title("Final Results per Observation")
+
+    model_predictions_frame = LabelFrame(final_result, border=4, highlightthickness=2)
+    model_predictions_frame.grid(row=0, column=0, padx=10, pady=10, sticky="SN")
+    model_predictions_canvas = FigureCanvasTkAgg(model_predictions_plot, master=model_predictions_frame)
+    model_predictions_canvas.draw()
+    model_predictions_canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
     final_result.mainloop()
 
 
@@ -531,7 +569,7 @@ plot_visual_results_button.grid(row=1,column=0, padx=10, pady=10,columnspan=2,st
 evaluation_per_observation_button = Button(visualizations_frame, text="Evaluation Per Observation", font=header_font, anchor=CENTER,command=show_final_result_per_observation)
 evaluation_per_observation_button.grid(row=2,column=0, padx=10, pady=10,columnspan=2,sticky=E+W)
 
-evaluation_per_rule_button = Button(visualizations_frame, text="Evaluation Per Rule", font=header_font,anchor=CENTER, command=plot_visual_results)
+evaluation_per_rule_button = Button(visualizations_frame, text="Evaluation Per Rule", font=header_font,anchor=CENTER, command=show_final_result_per_rule)
 evaluation_per_rule_button.grid(row=3,column=0, padx=10, pady=10,columnspan=2,sticky=E+W)
 
 visualizations_frame.columnconfigure(1, weight=1)
