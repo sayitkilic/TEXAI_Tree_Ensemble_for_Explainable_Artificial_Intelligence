@@ -10,6 +10,7 @@ import numpy as np
 from functools import partial
 from tkinter import *
 from tkinter import filedialog
+from tkinter import ttk
 from tkinter.ttk import Progressbar
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -39,7 +40,8 @@ test_dataset = None
 model_train_dataset_predictions = None
 model_test_predictions = None
 texai_test_predictions =  None
-
+texai_test_predictions_dict_list =  None
+final_result_dataframe = None
 target_classes=[]
 min_probability_at_leaf=0
 min_probability_default_value = 40
@@ -215,23 +217,44 @@ def isRuleSuitableForObservation(rule, sampleDataset):
     return True
 
 def texai_predict(dataset):
+    global final_result_dataframe
     global rule_set
+
+    final_result_df_columns = []
+    final_result_df_columns.append("Model Prediction")
+    final_result_df_columns.append("TEXAI Prediction")
+    for c in target_classes:
+        final_result_df_columns.append(str(c))
+    final_result_df_columns.append("Total")
+    final_result_dataframe = pd.DataFrame(columns=final_result_df_columns)
     predictions = []
     for i in range(0,len(dataset)):
+        temp_df = pd.DataFrame(columns=final_result_df_columns)
+        temp_df["TEXAI Prediction"] = [None]
+        for c in target_classes:
+            temp_df[str(c)] = None
         proper_rules = []
         sample = dataset.iloc[[i]]
         for rule in rule_set:
             if (isRuleSuitableForObservation(rule, sampleDataset=sample)):
                 proper_rules.append(rule)
+        temp_df["Total"] = len(proper_rules)
+        pred = None
         if(len(proper_rules) > 0 ):
-
             tempLists = [[y for y in proper_rules if y.targetClass == x] for x in target_classes]
             count_dict = {}
             for index, group, c in zip(count(), tempLists, target_classes):
                 count_dict[c] = len(group)
-            predictions.append(max(count_dict, key=count_dict.get))
+            for key,value in count_dict.items():
+                temp_df[str(key)] = str(value)
+            pred = max(count_dict, key=count_dict.get)
+            temp_df["TEXAI Prediction"] = pred
         else:
-            predictions.append(None)
+            pred = None
+        predictions.append(pred)
+
+        final_result_dataframe = pd.concat([final_result_dataframe, temp_df], ignore_index=True)
+        final_result_dataframe.reset_index()
 
     return predictions
 
@@ -335,7 +358,7 @@ def plot_visual_results():
     visual_results_frame.bind("<Configure>", configure_scroll_region)
     mainloop()
 
-def create_rule_set_summary():
+def fill_rule_set_summary_frame():
     rowInd = 2
     for c in target_classes:
         count = len([rule for rule in rule_set if rule.targetClass == c])
@@ -344,19 +367,20 @@ def create_rule_set_summary():
         rowInd+=1
     rule_set_summary = Label(rule_summary_frame, text="Total", font=font, justify=LEFT).grid(sticky=W,row=rowInd,column=0,padx=10, pady=0)
     rule_set_summary_value = Label(rule_summary_frame, text=str(len(rule_set)), font=font, justify=RIGHT).grid(sticky=E,row=rowInd,column=1,padx=10, pady=0)
-
-
 def evaluation():
     global model
     global model_test_predictions
     global texai_test_predictions
-    create_rule_set_summary()
+    global final_result_dataframe
+    fill_rule_set_summary_frame()
 
     no_prediction_count = 0
     wrong_prediction_count =0
     correct_prediction_count = 0
     model_test_predictions = model.predict(test_dataset)
     texai_test_predictions = texai_predict(test_dataset)
+
+    final_result_dataframe["Model Prediction"] = model_test_predictions
 
     for i in range(len(texai_test_predictions)):
         if(texai_test_predictions[i] is None):
@@ -371,11 +395,29 @@ def evaluation():
     no_prediction_observation_count_label["text"] = no_prediction_count
     match_score_label_value["text"] =  str(round(correct_prediction_count/len(test_dataset),2)*100)+"%"
 
+def show_final_result_per_observation():
+    final_result = Tk()
+    final_result.title("Final Results per Observation")
+    scrollbar = ttk.Scrollbar(final_result, orient="vertical")
+    tree = ttk.Treeview(final_result, yscrollcommand=scrollbar.set)
+    tree["columns"] = list(final_result_dataframe.columns)
+    for column in tree["columns"]:
+        tree.column(column, anchor="w")
+        tree.heading(column, text=column, anchor="w")
+
+    for index, row in final_result_dataframe.iterrows():
+        tree.insert("", index, text=str(index), values=list(row))
+
+    scrollbar.configure(command=tree.yview)
+    scrollbar.pack(side="right", fill="y")
+    tree.pack(expand=True, fill="both")
+    final_result.mainloop()
+
 
 main_screen = tkinter.Tk()
 screen_width = main_screen.winfo_screenwidth()
 screen_height = main_screen.winfo_screenheight()
-main_screen.title("**Tree Ensemble for eXplainable Artificial Intelligence(TEXAI)**")
+main_screen.title("--Tree Ensemble for eXplainable Artificial Intelligence(TEXAI)--")
 main_screen.geometry("{0}x{1}+0+0".format(screen_width, screen_height))
 
 input_frame = LabelFrame(main_screen,width=(int)(screen_width/10*8), height=(int)(screen_height/10*2),border=4, highlightthickness=2)
@@ -394,19 +436,19 @@ test_dataset_input_button.grid(row=3,column=1, padx=10, pady=10)
 tuning_frame = LabelFrame(main_screen,border=4, highlightthickness=2)
 tuning_frame.grid(row=0, column=1, padx=10, pady=10, sticky= "SN")
 tuning_frame_title = Label(tuning_frame, text = "PARAMETER TUNING",font=header_font,justify=CENTER).grid(row=0,column=0, padx=10, pady=10,columnspan=4)
-min_probability_label = Label(tuning_frame, text = "Minimum probability value",font=font,justify=LEFT).grid(sticky = W,row=1,column=0, padx=10, pady=10)
+min_probability_label = Label(tuning_frame, text = "Min probability",font=font,justify=LEFT).grid(sticky = W,row=1,column=0, padx=10, pady=10)
 min_probability_entry = Entry(tuning_frame, textvariable=StringVar(value=min_probability_default_value), font=font)
 min_probability_entry.grid(row=1,column=1, padx=10, pady=10)
 
-min_coverage_label = Label(tuning_frame, text = "Minimum probability value",font=font,justify=LEFT).grid(sticky = W,row=2,column=0, padx=10, pady=10)
+min_coverage_label = Label(tuning_frame, text = "Min probability",font=font,justify=LEFT).grid(sticky = W,row=2,column=0, padx=10, pady=10)
 min_coverage_entry = Entry(tuning_frame, textvariable=StringVar(value=min_coverage_default_value), font=font)
 min_coverage_entry.grid(row=2,column=1, padx=10, pady=10)
 
-max_gini_impurity_label = Label(tuning_frame, text = "Maximum gini impurity value",font=font,justify=LEFT).grid(sticky = W,row=3,column=0, padx=10, pady=10)
+max_gini_impurity_label = Label(tuning_frame, text = "Max gini impurity",font=font,justify=LEFT).grid(sticky = W,row=3,column=0, padx=10, pady=10)
 max_gini_impurity_entry = Entry(tuning_frame, textvariable=StringVar(value=max_gini_impurity_default_value), font=font)
 max_gini_impurity_entry.grid(row=3,column=1, padx=10, pady=10)
 
-max_tree_count_label = Label(tuning_frame, text = "Maximum tree count",font=font,justify=LEFT).grid(sticky = W,row=1,column=2, padx=10, pady=10)
+max_tree_count_label = Label(tuning_frame, text = "Max tree count",font=font,justify=LEFT).grid(sticky = W,row=1,column=2, padx=10, pady=10)
 max_tree_count_entry = Entry(tuning_frame, textvariable=StringVar(value=max_tree_count_default_value), font=font)
 max_tree_count_entry.grid(row=1,column=3, padx=10, pady=10)
 
@@ -484,11 +526,13 @@ visualizations_frame_title = Label(visualizations_frame, text = "VISUALIZATION",
 
 
 plot_visual_results_button = Button(visualizations_frame, text="Predictions Plot", font=header_font,anchor=CENTER,command=plot_visual_results)
-plot_visual_results_button.grid(row=1,column=0, padx=10, pady=40,columnspan=2,sticky=E+W)
+plot_visual_results_button.grid(row=1,column=0, padx=10, pady=10,columnspan=2,sticky=E+W)
 
+evaluation_per_observation_button = Button(visualizations_frame, text="Evaluation Per Observation", font=header_font, anchor=CENTER,command=show_final_result_per_observation)
+evaluation_per_observation_button.grid(row=2,column=0, padx=10, pady=10,columnspan=2,sticky=E+W)
 
-
-
+evaluation_per_rule_button = Button(visualizations_frame, text="Evaluation Per Rule", font=header_font,anchor=CENTER, command=plot_visual_results)
+evaluation_per_rule_button.grid(row=3,column=0, padx=10, pady=10,columnspan=2,sticky=E+W)
 
 visualizations_frame.columnconfigure(1, weight=1)
 rule_summary_frame.columnconfigure(1,weight=1)
